@@ -1,0 +1,4 @@
+plots/
+output/
+*.asv
+.DS_Store
