@@ -28,7 +28,8 @@ function [lsir, lsir_ndiff, lsir_diff, analysis] = REPAIR(srir, pars, analysis_o
 %   Vector-Base-Amplitude-Panning
 %       https://github.com/polarch/Vector-Base-Amplitude-Panning
 %
-% INPUT ARGUMENTS signalLength x nCH
+% INPUT ARGUMENTS 
+%   srir                       : input microphone array/spatial RIR; signalLength x nCH
 %   pars.grid_svecs            : array steering vectors; nCH x nDirs
 %   pars.grid_dirs_xyz         : measurement grid for the array steering vectors (unit-length Cartesian vectors); nDirs x 3
 %   pars.grid_dirs_rad         : measurement grid for the array steering vectors (in Spherical coordinates, radians); nDirs x 2
@@ -173,13 +174,16 @@ end
 if pars.ENABLE_DIFF_WHITENING
     if ~BROAD_BAND_SVECS, reg_par = 0.01; else, reg_par = 0; end
     T_whiten = zeros(nCH, nCH, nFreqGrps);  
+    T_unwhiten = zeros(nCH, nCH, nFreqGrps);  
     for grp=1:nFreqGrps
         DFCmtx_norm = DFCmtx_grp(:,:,grp).*(nCH./trace(DFCmtx_grp(:,:,grp)));
         [U,E] = svd(DFCmtx_norm); 
-        T_whiten(:,:,grp) = sqrt(pinv(E + reg_par*eye(nCH)))*U'; 
-    end
+        T_whiten(:,:,grp) = sqrt(pinv(E + reg_par*eye(nCH)))*U';   
+        T_unwhiten(:,:,grp) = U*sqrt(E+reg_par*eye(nCH)); 
+    end 
 else
     T_whiten = repmat(eye(nCH),[1 1 nFreqGrps]);
+    T_unwhiten = repmat(eye(nCH),[1 1 nBins_anl]);
 end
 % Note: If in the SH domain, DCM - T_whiten*DCM*T_whiten' = 0, (i.e. whitening is bypassed)
 
@@ -308,6 +312,7 @@ switch pars.SCMavgOption
                 end
             end
         end
+        
     case 'alltime'
         Cxx_avg = zeros(nCH, nCH, nBins_anl);
         inspec_anl = inspec_frame(1:fftsize/winsize:end,:,:); 
@@ -316,6 +321,7 @@ switch pars.SCMavgOption
             Cxx_avg(:,:,nb) = in*in';  
         end
         Cxx_frame = repmat(Cxx_avg, [1 1 1 nFrames]);
+        
     otherwise
         error('unsuported pars.SCMavgOption')
 end
@@ -375,7 +381,6 @@ while idx + fftsize <= lSig_pad
         lambda = diag(real(S)); 
         diff_comedie = comedie(lambda);
         K_comedie = floor( (nCH-1)*(diff_comedie) + 1);
-        %K_comedie = floor((nCH*(1-diff_comedie)));
         switch pars.Kestimator
             case 'SORTE'
                 if nCH>4,  KK = min([SORTE(lambda) maxK]);
@@ -427,33 +432,30 @@ while idx + fftsize <= lSig_pad
             case 'RECON'
                 j=1;
                 for K=KK 
-                    for nb = grp_bins
-                        % Obtain mixing matrices
-                        if K==0
-                            recon_Ms = zeros(nCH); 
-                            recon_Md = eye(nCH); 
-                        else  
-                            Gs = grid_svecs(:,est_idx{j},nb); 
-                            Gd = eye(nCH); 
-                            [recon_Ms, recon_Md] = constructMixingMatrices(pars.beamformerOption, grid_svecs(:,est_idx{j},nb), DFCmtx(:,:,nb), Gs, Gd, pars.streamBalance);
-                        end   
-                        
-                        % Use to reconstruct the input   
-                        Cxx_norm = Cxx(:,:,nb)./(trace(Cxx(:,:,nb))+eps);
-                        Cxx_recon_s = recon_Ms*Cxx_norm*recon_Ms';
-                        Cxx_recon_d = recon_Md*Cxx_norm*recon_Md' .* eye(nCH); % Assuming perfect decorrelation, so more important that channel energies are OK
-                        Cxx_recon = Cxx_recon_s + Cxx_recon_d; 
-                        recon_err(j, nb) = trace((Cxx_norm-Cxx_recon)*(Cxx_norm-Cxx_recon)');  
-                    end
+                    % Obtain mixing matrices
+                    if K==0
+                        recon_Ms = zeros(nCH); 
+                        recon_Md = eye(nCH); 
+                    else  
+                        Gs = grid_svecs(:,est_idx{j},v0_ind(grp)); 
+                        Gd = eye(nCH); 
+                        [recon_Ms, recon_Md] = constructMixingMatrices(pars.beamformerOption, grid_svecs(:,est_idx{j},v0_ind(grp)), DFCmtx_grp(:,:,grp), Gs, Gd, pars.streamBalance);
+                    end   
+
+                    % Use to reconstruct the input   
+                    Cxx_norm = Cxx_WINGS./(trace(Cxx_WINGS)+eps);
+                    Cxx_recon_s = recon_Ms*Cxx_norm*recon_Ms';
+                    Cxx_recon_d = T_unwhiten(:,:,grp)*(recon_Md*Cxx_norm*recon_Md' .* eye(nCH))*T_unwhiten(:,:,grp)'; % Assuming perfect decorrelation, so more important that channel energies are OK
+                    Cxx_recon = Cxx_recon_s + Cxx_recon_d; 
+                    recon_err(j, 1) = trace((Cxx_norm-Cxx_recon)*(Cxx_norm-Cxx_recon)');  
+
                     j=j+1;
                 end
 
                 % Determine optimal K
-                recon_err2 = sum(recon_err(:,grp_bins),2);  
-                [~,min_ind] = min(recon_err2);
+                [~,min_ind] = min(recon_err);
                 est_idx = est_idx{min_ind};
                 K = KK(min_ind); 
-                
         end  
         
         % CONSTRUCT REPAIR SYNTHESIS MATRICES  
@@ -626,13 +628,6 @@ function [Ms, Md] = constructMixingMatrices(beamformerOption, As, DFCmtx, Gs, Gd
     
     % Ambient stream beamforming weights, Dd
     Dd = eye(nCH) -  As*Ds;  
-    
-%     % Energy TESTS
-%     Ds_energy = trace((Gs*Ds)*(Gs*Ds)');
-%     Dd_energy = trace((Gd*Dd)*(Gd*Dd)');
-%     test      = diag( (Gd*Dd)*(Gd*Dd)');
-%     test(:,2) = diag( (Gs*Ds)*(Gs*Ds)' );  
-%     dec_energy = sum(test(:));
     
     % Optional stream balance manipulations
     if streamBalance<1
