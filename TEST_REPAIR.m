@@ -36,7 +36,9 @@
 %       https://se.mathworks.com/matlabcentral/fileexchange/56663-sdm-toolbox
 %
 % REFERENCES
-%   [1] Submitted for review
+%   [1] McCormack, L., Meyer-Kahlen, N., and Politis, A. (2023). "Spatial
+%       Reconstruction-Based Rendering of Microphone Array Room Impulse
+%       Responses". Journal of the Audio Engineering Society, 71(5), pp.267-280.
 %
 % -------------------------------------------------------------------------
 %

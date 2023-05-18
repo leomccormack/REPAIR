@@ -64,7 +64,9 @@ function [lsir, lsir_ndiff, lsir_diff, analysis] = REPAIR(srir, pars, analysis_o
 %   analysis.elev              : (optional) estimated reflection elevations
 %                                
 % REFERENCES
-%   [1] Submitted for review
+%   [1] McCormack, L., Meyer-Kahlen, N., and Politis, A. (2023). "Spatial
+%       Reconstruction-Based Rendering of Microphone Array Room Impulse
+%       Responses". Journal of the Audio Engineering Society, 71(5), pp.267-280.
 %
 % -------------------------------------------------------------------------
 %

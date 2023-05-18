@@ -24,4 +24,5 @@ This code is provided under the [GNU GPLv2 license](https://choosealicense.com/l
 
 ## References 
 
-[1] Submitted for review.
+[1] McCormack, L., Meyer-Kahlen, N., and Politis, A. (2023). [**"Spatial Reconstruction-Based Rendering of Microphone Array Room Impulse Responses"**](docs/mccormack2023spatial.pdf). 
+Journal of the Audio Engineering Society, 71(5), pp.267-280.
